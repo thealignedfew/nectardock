@@ -17,11 +17,22 @@ from switchboard_activity import ActivityRecorder, run_json_command
 from switchboard_instance import InstanceGate
 from switchboard_preferences import DEFAULTS, PREFERENCES_PATH, load_preferences, save_preferences, validate_preferences
 from app_metadata import APP_NAME, APP_VERSION, PUBLISHER, RELEASE_CHANNEL
+from survivor_dialog import SurvivorDialog
+from survivor_review import conflict_uuid
 
 
 ACCOUNT_INKS = {'GREEN':'#78D6A0', 'YELLOW':'#FFE066', 'ORANGE':'#FFB278',
                 'PURPLE':'#D9B3FF', 'BLUE':'#89BEFF'}
 USAGE_BUCKETS = {'Fable':'fable', '5-hour':'five_hour', 'Weekly':'seven_day'}
+
+
+def start_tracked_worker(jobs,worker):
+    jobs[0]+=1
+    try:
+        threading.Thread(target=worker,daemon=True).start()
+    except Exception:
+        jobs[0]-=1
+        raise
 
 
 def usage_percent(row, bucket):
@@ -478,6 +489,12 @@ def main():
         regularization_apply.configure(state='normal' if regularization_prepared[0] else 'disabled')
         if result.get('state')=='SWITCH_COMPLETE_SAVED_HISTORIES_READY':
             messagebox.showinfo('Switch complete','Saved histories and the account map are updated. The destination workspace has been requested. Resume the original conversations in Claude Code history. Select effort before your next prompt; monitors and AutoClaude participation are not rearmed.')
+        sid=conflict_uuid(result,tree.get_children())
+        if sid and messagebox.askyesno('Compare the conflicting histories?',
+                'This conversation has distinct saved branches. Compare both accounts and choose whether to use '
+                'the registered source as the survivor? Nothing is replaced until you review and apply.',parent=root):
+            tree.selection_set(sid)
+            root.after_idle(open_survivor)
 
     def run(mode):
         if busy[0]:return
@@ -600,7 +617,6 @@ def main():
     utilities = ttk.Frame(frame); utilities.pack(fill='x', pady=(5,2))
 
     def child_json(script, args, callback):
-        auxiliary_jobs[0] += 1
         def worker():
             try:
                 data=execute_logged(script,args)
@@ -611,7 +627,32 @@ def main():
                 auxiliary_jobs[0] -= 1
                 callback(data)
             root.after(0, deliver)
-        threading.Thread(target=worker, daemon=True).start()
+        start_tracked_worker(auxiliary_jobs,worker)
+
+    def open_survivor():
+        if not safe_to_close(busy[0],auxiliary_jobs[0]):
+            messagebox.showinfo('Operation running','Wait for current local commands to finish.',parent=root);return
+        chosen=list(tree.selection())
+        if len(chosen)!=1:
+            messagebox.showinfo('Select one conversation','Choose exactly one conversation and its destination account, then compare branches.',parent=root);return
+        invalidate();invalidate_regularization()
+        def command(script,args,callback):
+            busy[0]=True
+            def done(result):
+                busy[0]=False
+                callback(result)
+            try:
+                child_json(script,args,done)
+            except Exception:
+                busy[0]=False
+                raise
+        def completed(result):
+            refresh();show(result)
+            queue_activity('Survivor applied to saved history. No workspace launch requested.')
+        SurvivorDialog(root,group.get(),color.get(),chosen[0],command,completed)
+
+    survivor_button=ttk.Button(utilities,text='Compare branches / choose survivor',command=open_survivor)
+    survivor_button.pack(side='left',padx=(0,8));widgets.append(survivor_button)
 
     def open_inventory():
         window = tk.Toplevel(root); window.title('Account inventory, compare and reviewed merge')
@@ -895,6 +936,7 @@ def main():
     help_button=ttk.Button(utilities,text='Show button help');help_button.pack(side='right')
     help_frame=ttk.LabelFrame(frame,text='Button help',padding=9)
     help_text=(
+        'Compare branches / choose survivor: select exactly one conversation and a different destination. Compare saved times, record counts, text previews and companion hashes. Choose the registered source to replace the destination, or keep the destination unchanged and cancel. No winner is preselected. Prepare preserves both main originals; open the review, acknowledge replacements, then Apply survivor. Changed evidence or live writers hold. No workspace opens, no prompt is sent, and source copies remain preserved.\n'
         'Top toolbar: Refresh data rereads the main table; Usage opens account snapshots; Reload App restarts only the idle switchboard from disk; Options saves display choices. Usage can sort by each bucket; missing readings sort last. Defaults are Fable ascending and a 95% strike threshold. Stale readings use gray backgrounds and absolute local reset times. Weekly above the threshold strikes the whole plan; 5-hour and Fable above it strike only those buckets. Strike-through is a display warning, not an account lock. Developer diagnostics expose no bypasses. BLUE is reserved and unassigned, not a configured login.\n'
         'Select all / Clear: select or clear visible conversation rows. Refresh table: reread the current-home register and saved history files; clears selection and any prepared review, but never moves history. Check readiness: check selected saved histories without moving them. Runtime diagnostics: identify live writers and unresolved PIDs; exact account login/status helpers are automatically excluded as non-writers, never terminated. Unknown writers remain HELD.\n'
         'Prepare transition: create a review for selected conversations. Open transition review: inspect it. Open destination workspace: launch the whole VS Code workspace only when selected histories are registered there and no saved tabs outside the selection would restore. Selection does not automatically open individual Claude tabs. Apply and open workspace: apply the reviewed history move, then open it.\n'

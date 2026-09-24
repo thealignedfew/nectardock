@@ -531,6 +531,8 @@ def prepare(group, color, ids=None, survivor_source=None):
             tools = {Path(k).name for k in source_files if k.startswith('sidecars/tool-results/')}
             held_refs = inherited_reference_holds(row, main, available, tools)
             manifest['sessions'].append({'record': row, 'source_members': {k: str(v) for k, v in source_files.items()}, 'target_members': {k: str(v) for k, v in target_files.items()}, 'operations': ops, 'inherited_reference_holds': held_refs})
+            if choose_source:
+                manifest['sessions'][-1]['survivor_target_hashes'] = {k:digest(v) for k,v in target_files.items()}
         emit_progress('PREPARE inspecting shared project memory')
         # A single-session survivor choice must not alter shared project memory.
         if not choose_source:
@@ -564,6 +566,9 @@ def prepare(group, color, ids=None, survivor_source=None):
         for section in manifest['sessions']:
             require(members(h, section['record']) == {k: Path(v) for k, v in section['source_members'].items()}, 'Source companion membership changed')
             require(members(h, section['record'], target_home) == {k: Path(v) for k, v in section['target_members'].items()}, 'Target companion membership changed')
+            if choose_source:
+                require({k:digest(v) for k,v in section['target_members'].items()} == section['survivor_target_hashes'],
+                        'Destination companion content changed during preparation')
         for op in [o for s in manifest['sessions'] for o in s['operations']] + manifest['memory']:
             stable(h, op['source'])
             if op['before']:
@@ -869,6 +874,9 @@ def apply(path, sha, accept_memory=False, open_window=False, accept_companions=F
         for s in m['sessions']:
             require(members(h, s['record']) == {k: Path(v) for k, v in s['source_members'].items()}, 'Source companions changed')
             require(members(h, s['record'], target) == {k: Path(v) for k, v in s['target_members'].items()}, 'Target companions changed')
+            if choose_source:
+                require({k:digest(v) for k,v in s['target_members'].items()} == s.get('survivor_target_hashes'),
+                        'Destination companion content changed or survivor review is outdated; prepare again')
             for op in s['operations']:
                 want = destination(target, Path(s['record']['primary_history_path']).parent.name, s['record']['uuid'], op['relative'])
                 require(norm(want) == norm(op['destination']), 'Manifest target escaped its conversation')

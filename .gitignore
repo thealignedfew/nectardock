@@ -19,6 +19,11 @@
 !/switchboard_preferences.py
 !/switcher.py
 !/switcher_ui.py
+!/survivor_review.py
+!/survivor_dialog.py
+!/test_survivor_review.py
+!/test_survivor_dialog.py
+!/test_survivor_integration.py
 !/usage_snapshot.py
 !/test_account_inventory.py
 !/test_display_options.py

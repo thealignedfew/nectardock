@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.4 source preview
+
+- Added a single-conversation branch comparison dialog, also offered from a held
+  main-history conflict. No winner is preselected.
+- Displays account identity, recorded local user-text/output times, common-prefix
+  and branch counts, bounded text previews, history and companion hashes.
+  Thinking blocks and tool payloads are excluded from previews.
+- An explicit registered-source survivor replaces the destination only after
+  preparation, original backups and reviewed confirmation. Keeping the destination
+  cancels the transfer; it does not adopt a different registered home.
+- History, companion and register changes invalidate stale choices. Authentication,
+  live-writer and recovery guards remain enforced. Apply does not open a workspace.
+- Source copies remain preserved. This is replacement, not merge or verified cut.
+- Verified 72 self-contained Python tests and four launcher tests. The private
+  baseline passed 158 Python tests; helper-dependent execution is still not portable.
+
 ## 0.2.3 source preview
 
 - A workspace group can contain multiple native project roots. Catalog, selection,

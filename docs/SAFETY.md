@@ -17,6 +17,18 @@ command adopts an existing target only when its main history equals or byte-exte
 the registered source and source companions are present and hash-identical.
 Different histories require an explicit, separately reviewed survivor/merge decision.
 
+## A later timestamp is not a complete history
+
+Two branches can share a prefix and then diverge. A shorter branch can have a later
+assistant output time without containing the longer branch's work. The survivor
+dialog reports exact record comparison, recorded times and bounded text previews
+separately. It does not score or automatically pick a winner.
+
+An explicit source-survivor choice replaces the destination main history rather
+than merging branches. Both originals are preserved, all compared companion hashes
+are fenced, and a change after review requires a new review. A successful saved-file
+operation does not prove native runtime adoption or retire the old source copy.
+
 ## Unknown is not empty
 
 Directory traversal errors must stop completeness-dependent operations. A walk

@@ -1,0 +1,29 @@
+{
+  "name": "account-switchboard",
+  "displayName": "Account Switchboard",
+  "description": "Open registered Claude workspaces through the local account-isolated switchboard.",
+  "version": "0.1.0",
+  "publisher": "local-switchboard",
+  "engines": {"vscode": "^1.85.0"},
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "extensionKind": ["ui"],
+  "capabilities": {"untrustedWorkspaces": {"supported": false}, "virtualWorkspaces": false},
+  "contributes": {
+    "commands": [
+      {"command": "accountSwitchboard.openWorkspace", "title": "Open Account Workspace...", "category": "Switchboard"},
+      {"command": "accountSwitchboard.runtimeDiagnostics", "title": "Runtime Diagnostics", "category": "Switchboard"}
+    ],
+    "configuration": {
+      "title": "Account Switchboard",
+      "properties": {
+        "accountSwitchboard.pythonPath": {"type": "string", "scope": "application",
+          "default": "C:\\Users\\ExampleUser\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+          "description": "Absolute local Python path. User-level only, never selected by a workspace."},
+        "accountSwitchboard.backendPath": {"type": "string", "scope": "application",
+          "default": "D:\\NectarDockExample\\Accounts\\Claude\\SessionSwitch\\switcher.py",
+          "description": "Absolute path to the reviewed local switchboard backend. User-level only."}
+      }
+    }
+  }
+}

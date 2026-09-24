@@ -1,0 +1,26 @@
+name: Self-contained source checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  synthetic-tests:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Self-contained Python subset (not the full engine)
+        run: python -B -m unittest test_account_inventory test_regularize test_usage_snapshot test_runtime_diagnostics test_switchboard_activity test_switchboard_instance test_switcher_ui_rows test_display_options -q
+      - name: Standalone launcher tests (not VS Code extension-host tests)
+        run: node --test vscode-extension/test-launcher.js
+      - name: Syntax-check all Python sources without importing helpers
+        run: python -B -c "import ast,pathlib; files=list(pathlib.Path('.').rglob('*.py')); [ast.parse(p.read_text(encoding='utf-8'), filename=str(p)) for p in files]; print(f'{len(files)} Python sources parsed')"

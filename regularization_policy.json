@@ -1,0 +1,9 @@
+{
+  "schema": "claude-regularization-policy/v1",
+  "authority": "Synthetic example only; no live account changes authorized by this file.",
+  "skills_root": "D:/NectarDockExample/skills",
+  "accounts": {},
+  "shared_settings": {},
+  "protected_settings": ["permissions", "hooks", "model", "modelSettings", "autoMode", "extraKnownMarketplaces"],
+  "shared_skills": []
+}

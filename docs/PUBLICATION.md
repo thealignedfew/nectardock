@@ -28,6 +28,6 @@ tests on Windows. The remaining helper-dependent tests are retained as specifica
 but are not runnable from a clean clone yet. This is a source preview, not a binary
 release or full product portability claim.
 
-Repository ownership is intended to be `thealignedfew/nectarhub`. The product name
+Repository ownership is `thealignedfew/nectardock`. The product name
 is NectarDock. Personal contributor identity is `maxeckemoff`; use the GitHub noreply
 address rather than publishing a private account email in commit metadata.

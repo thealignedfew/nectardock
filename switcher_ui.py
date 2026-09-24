@@ -19,6 +19,7 @@ from switchboard_preferences import DEFAULTS, PREFERENCES_PATH, load_preferences
 from app_metadata import APP_NAME, APP_VERSION, PUBLISHER, RELEASE_CHANNEL
 from survivor_dialog import SurvivorDialog
 from survivor_review import conflict_uuid
+from batch_dialog import BatchDialog
 
 
 ACCOUNT_INKS = {'GREEN':'#78D6A0', 'YELLOW':'#FFE066', 'ORANGE':'#FFB278',
@@ -374,6 +375,7 @@ def main():
     ttk.Label(frame,text='Select only the conversations to move. Ctrl/Shift selects multiple rows; nothing is preselected. Modified time and version come from saved history, not live runtime.').pack(anchor='w',pady=6)
     buttons = ttk.Frame(frame);buttons.pack(fill='x',pady=6)
     prepared = [None]; regularization_prepared = [None]; busy = [False]; auxiliary_jobs = [0]
+    active_dialog = [None]
     reload_requested = [False]
     variants = tk.BooleanVar(value=False)
     check = ttk.Checkbutton(frame,variable=variants,text='I reviewed the variant list: preserve old copies, use the current source companions, and keep existing destination memory notes.')
@@ -391,6 +393,9 @@ def main():
         except OSError:
             line=f'[{dt.datetime.now().astimezone():%Y-%m-%d %H:%M:%S %Z}] {message} [disk log unavailable]'
         activity_entries.append(line)
+        dialog=active_dialog[0]
+        if dialog is not None and dialog.busy and dialog.window.winfo_exists():
+            dialog.status.set(str(message))
         panel=activity_text[0]
         if panel is not None and panel.winfo_exists():
             panel.configure(state='normal');panel.insert('end',line+'\n')
@@ -543,10 +548,11 @@ def main():
         if prepared[0]:os.startfile(prepared[0]['review'])
         else:messagebox.showinfo('No prepared review','Run Prepare first.')
 
-    for label,command in [('Select all',lambda:tree.selection_set(tree.get_children())),('Clear',lambda:tree.selection_remove(tree.selection())),('Refresh table',manual_refresh),('Check readiness',lambda:run('status')),('Prepare transition',lambda:run('prepare')),('Open transition review',review),('Open destination workspace',lambda:run('open'))]:
+    for label,command in [('Select all',lambda:tree.selection_set(tree.get_children())),('Clear',lambda:tree.selection_remove(tree.selection())),('Refresh table',manual_refresh),('Check readiness',lambda:run('status')),('Prepare transition (batch)',lambda:open_batch()),('Open destination workspace',lambda:run('open'))]:
         b=ttk.Button(buttons,text=label,command=command);b.pack(side='left',padx=(0,8));widgets.append(b)
     apply_button=ttk.Button(buttons,text='Apply and open workspace',command=lambda:run('apply'),state='disabled')
-    apply_button.pack(side='right');widgets.append(apply_button)
+    # Retained for legacy command bookkeeping; new transfers are reviewed/applied in the batch dialog.
+    widgets.append(apply_button)
     diagnostic_button=ttk.Button(root,text='Runtime diagnostics',command=lambda:run('diagnose'))
     diagnostic_button.pack(anchor='w',padx=12);widgets.append(diagnostic_button)
 
@@ -649,7 +655,25 @@ def main():
         def completed(result):
             refresh();show(result)
             queue_activity('Survivor applied to saved history. No workspace launch requested.')
-        SurvivorDialog(root,group.get(),color.get(),chosen[0],command,completed)
+        active_dialog[0]=SurvivorDialog(root,group.get(),color.get(),chosen[0],command,completed)
+
+    def open_batch():
+        if not safe_to_close(busy[0],auxiliary_jobs[0]):
+            messagebox.showinfo('Operation running','Wait for current local commands to finish.',parent=root);return
+        chosen=list(tree.selection())
+        if not chosen:
+            messagebox.showinfo('Select conversations','Choose the conversations to transfer, then choose the destination account.',parent=root);return
+        invalidate();invalidate_regularization()
+        def command(script,args,callback):
+            busy[0]=True
+            def done(result):
+                busy[0]=False;callback(result)
+            try:child_json(script,args,done)
+            except Exception:
+                busy[0]=False;raise
+        def completed(result):
+            refresh();show(result);queue_activity('Reviewed batch applied. No workspace launch requested.')
+        active_dialog[0]=BatchDialog(root,group.get(),color.get(),chosen,command,completed)
 
     survivor_button=ttk.Button(utilities,text='Compare branches / choose survivor',command=open_survivor)
     survivor_button.pack(side='left',padx=(0,8));widgets.append(survivor_button)
@@ -939,7 +963,7 @@ def main():
         'Compare branches / choose survivor: select exactly one conversation and a different destination. Compare saved times, record counts, text previews and companion hashes. Choose the registered source to replace the destination, or keep the destination unchanged and cancel. No winner is preselected. Prepare preserves both main originals; open the review, acknowledge replacements, then Apply survivor. Changed evidence or live writers hold. No workspace opens, no prompt is sent, and source copies remain preserved.\n'
         'Top toolbar: Refresh data rereads the main table; Usage opens account snapshots; Reload App restarts only the idle switchboard from disk; Options saves display choices. Usage can sort by each bucket; missing readings sort last. Defaults are Fable ascending and a 95% strike threshold. Stale readings use gray backgrounds and absolute local reset times. Weekly above the threshold strikes the whole plan; 5-hour and Fable above it strike only those buckets. Strike-through is a display warning, not an account lock. Developer diagnostics expose no bypasses. BLUE is reserved and unassigned, not a configured login.\n'
         'Select all / Clear: select or clear visible conversation rows. Refresh table: reread the current-home register and saved history files; clears selection and any prepared review, but never moves history. Check readiness: check selected saved histories without moving them. Runtime diagnostics: identify live writers and unresolved PIDs; exact account login/status helpers are automatically excluded as non-writers, never terminated. Unknown writers remain HELD.\n'
-        'Prepare transition: create a review for selected conversations. Open transition review: inspect it. Open destination workspace: launch the whole VS Code workspace only when selected histories are registered there and no saved tabs outside the selection would restore. Selection does not automatically open individual Claude tabs. Apply and open workspace: apply the reviewed history move, then open it.\n'
+        'Prepare transition (batch): scan the whole selection first and show ALL conflicts together. Already-destination rows need no transfer. Choose source survivors individually or by listed source color, or exclude rows. Open one combined review and Apply the included batch once. Choices are never automatic; changed histories require a rescan. Both originals are preserved, shared project memory is unchanged, and no workspace launches. Open destination workspace is a separate action: it opens the whole VS Code workspace after registration and saved-tab checks, not individual Claude tabs.\n'
         'Compare settings / skills: audit selected destination against canonical shared baseline. Prepare settings / Prepare skills: stage one regularization review. Open regularization review: inspect exact changes. Apply reviewed regularization: write only staged changes after confirmation.\n'
         'Unregistered sessions: discover saved histories missing from the current-home register, select exact UUIDs in their existing account, prepare and open a registration review, then register them. This does not transfer or open histories; use the main table afterward. Account inventory / merge: inventory all colors, compare a source/target pair, prepare selected categories, open the merge review, then apply the reviewed merge. Credentialed MCPs and permission conflicts stay held.\n'
         'Usage snapshot: fetch account-wide 5-hour, 7-day and Fable weekly usage. Last successful readings survive restarts and are labelled STALE after a failed check; stale reset times are absolute local times. On HTTP 401 or wrong-account login, Open sign-in starts only the named account login; use Switch account in the browser if needed, then Retry checks only that account. Unavailable is not zero.\n'

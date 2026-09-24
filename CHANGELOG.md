@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.5 source preview
+
+- Added a batch transition table that collects all selected conflicts before backups,
+  with explicit per-account survivor choices, exclusions, one combined review and Apply.
+  Bulk choices preserve exclusions. No winner or workspace launch is automatic.
+- Skip already-destination conversations, reuse verified identical snapshots within
+  one preparation, and omit mutation-journal flushes for unchanged KEEP operations.
+  Content, membership, runtime, authentication and recovery checks remain enforced.
+- Known live writers are held per row. Unknown identity holds pending rows. Large
+  unchanged registered checkpoints retain strict, bounded attachment validation.
+- Shared project memory is unchanged. Source copies remain preserved, not retired.
+  Interrupted batches keep checkpoints and a recovery marker, not a success receipt.
+- Added synthetic engine and GUI regressions for scope, stale evidence, interruptions,
+  bulk exclusions and mid-Apply changes. The external helper portability limit remains.
+
 ## 0.2.4 source preview
 
 - Added a single-conversation branch comparison dialog, also offered from a held

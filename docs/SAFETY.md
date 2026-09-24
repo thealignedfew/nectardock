@@ -29,6 +29,19 @@ than merging branches. Both originals are preserved, all compared companion hash
 are fenced, and a change after review requires a new review. A successful saved-file
 operation does not prove native runtime adoption or retire the old source copy.
 
+## Batch review is not automatic survivor selection
+
+The scan lists every selected row before preservation begins. Each distinct branch
+requires an explicit registered-source choice or exclusion. Bulk choices preserve
+prior exclusions. Already-destination conversations are no-ops. Known live writers
+are individually held; unresolved process identity holds pending rows.
+
+The prepared batch is bound to the exact scanned register, membership and content.
+Apply rechecks all included rows before writing. A partial failure retains checkpoints,
+journal and a recovery marker; it is not an atomic rollback or a completed batch.
+Identical snapshots can be reused only within one preparation after hash validation.
+KEEP actions skip mutation journaling, not freshness checks. Shared memory stays unchanged.
+
 ## Unknown is not empty
 
 Directory traversal errors must stop completeness-dependent operations. A walk

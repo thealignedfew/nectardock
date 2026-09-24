@@ -8,7 +8,9 @@ class SurvivorDialogTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(importlib.util.find_spec('survivor_dialog'), 'Survivor dialog missing')
         from survivor_dialog import SurvivorDialog
-        self.root=tk.Tk();self.root.withdraw();self.addCleanup(self.root.destroy)
+        self.root=tk.Tk();self.root.withdraw()
+        def cleanup():self.root.update_idletasks();self.root.destroy()
+        self.addCleanup(cleanup)
         self.commands=[];self.pending=[];self.completed=[]
         def command(script,args,callback):
             self.commands.append((script,args));self.pending.append(callback)

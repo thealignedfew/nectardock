@@ -27,16 +27,20 @@ def require_fresh(token, evidence):
     s.require(token == evidence_token(evidence), 'Compared histories, companions or register changed; compare again')
 
 
-def _scan(path, sid):
+class OversizedRecord(s.Hold):
+    pass
+
+
+def _scan(path, sid, record_limit=32*1024*1024):
     """Keep hashes and bounded text previews, never reasoning or tool payloads."""
     rows = []
     with Path(path).open('rb') as stream:
         while True:
-            raw = stream.readline(32 * 1024 * 1024 + 1)
+            raw = stream.readline(record_limit + 1)
             if not raw:
                 break
-            s.require(len(raw) <= 32 * 1024 * 1024 and raw.endswith(b'\n'),
-                      'Oversized or incomplete history record; separate review required')
+            if len(raw)>record_limit:raise OversizedRecord('Oversized history record; separate review required')
+            s.require(raw.endswith(b'\n'), 'Incomplete history record; separate review required')
             if not raw.strip():
                 continue
             value = json.loads(raw)
@@ -66,8 +70,16 @@ def _scan(path, sid):
     return rows
 
 
-def compare_histories(source, target, sid):
-    left, right = _scan(source, sid), _scan(target, sid)
+def compare_histories(source, target, sid, checkpoint=None, helper=None):
+    def scan(path):
+        try:return _scan(path,sid)
+        except OversizedRecord:
+            if not checkpoint or helper is None:raise
+            item={'snapshot':str(path),'sha256':s.digest(path),'bytes':Path(path).stat().st_size}
+            s.validate_large_checkpoint(helper,item,sid,checkpoint)
+            return _scan(path,sid,record_limit=s.LARGE_RECORD_BYTES)
+    left=scan(source)
+    right=left if Path(source)==Path(target) else scan(target)
     common = 0
     for a, b in zip(left, right):
         if a['hash'] != b['hash']:

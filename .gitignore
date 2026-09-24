@@ -21,6 +21,11 @@
 !/switcher_ui.py
 !/survivor_review.py
 !/survivor_dialog.py
+!/batch_transition.py
+!/batch_dialog.py
+!/test_batch_transition.py
+!/test_batch_dialog.py
+!/test_batch_choices.py
 !/test_survivor_review.py
 !/test_survivor_dialog.py
 !/test_survivor_integration.py

@@ -302,19 +302,39 @@ def validate_survivor_scope(rows, destination_color, ids, source_color):
     return True
 
 
+def survivor_choices(rows, destination_color, ids, legacy_source=None, choices=None):
+    require(not (legacy_source and choices), 'Use one survivor selection format')
+    result = dict(choices or {})
+    if legacy_source:
+        validate_survivor_scope(rows,destination_color,ids,legacy_source)
+        result[rows[0]['uuid']] = legacy_source
+    require(ids is not None or not result, 'Survivor choices require exact UUIDs')
+    by_id = {r['uuid']:r for r in rows}
+    require(set(result)<=set(by_id), 'Survivor choice outside selected conversations')
+    for sid,color in result.items():
+        validate_survivor_scope([by_id[sid]],destination_color,[sid],color)
+    return result
+
+
 def validate_survivor_manifest(manifest, rows, accepted):
-    choose_source = validate_survivor_scope(
+    choices = survivor_choices(rows,manifest['color'],manifest.get('selected_uuids'),
+                              manifest.get('survivor_source'),manifest.get('survivor_sources'))
+    choose_source = bool(choices)
+    validate_survivor_scope(
         rows, manifest['color'], manifest.get('selected_uuids'), manifest.get('survivor_source'))
     count = sum(op['action'] == 'CHOOSE_SOURCE_MAIN_SURVIVOR'
                 for section in manifest['sessions'] for op in section['operations'])
     require(manifest.get('survivor_main_count', 0) == count,
             'Survivor action count does not match prepared operations')
     require(not count or choose_source, 'Survivor action lacks an exact source selection')
+    for section in manifest['sessions']:
+        require(not any(o['action']=='CHOOSE_SOURCE_MAIN_SURVIVOR' for o in section['operations'])
+                or section['record']['uuid'] in choices, 'Survivor action lacks a per-conversation choice')
     require(not choose_source or not manifest.get('memory'),
             'A one-conversation survivor choice cannot change shared memory')
     require(not count or accepted,
             'Review the divergent main histories and explicitly accept the named source survivor')
-    return choose_source
+    return choices
 
 
 def native_records(path):
@@ -417,17 +437,34 @@ def validate_large_checkpoint(h, item, sid, checkpoint):
                     'bounded_record_limit': LARGE_RECORD_BYTES, 'largest_record_bytes': maximum})
 
 
-def capture(h, path, objects, sid, parse=False, checkpoint=None):
+def capture(h, path, objects, sid, parse=False, checkpoint=None, cache=None):
     plain(path)
+    key = None
+    if cache is not None:
+        before = h.fence(path); sha = digest(path)
+        require(h.fence(path)==before, 'Changing source file')
+        key = (sha, bool(parse), sid if parse else None)
+        previous = cache.get(key)
+        if previous:
+            plain(previous['snapshot'])
+            require(digest(previous['snapshot'])==sha, 'Preserved snapshot changed')
+            after = h.fence(path)
+            require(after==before, 'Changing source file')
+            return dict(copy.deepcopy(previous),path=str(path),before=before,after=after,
+                        stable_during_read=True,reused_snapshot=True)
     item = h.capture(path, objects, sid, parse=parse)
     require(item['stable_during_read'], 'Changing source file')
     if parse:
         if item.get('oversized_records') and checkpoint:
             item['standard_parser_oversized_records'] = item['oversized_records']
             validate_large_checkpoint(h, item, sid, checkpoint)
-        for key in ('oversized_records', 'malformed_complete_lines', 'unterminated_tail_bytes', 'foreign_session_ids'):
-            require(not item.get(key), 'History needs review: ' + key + ': ' + str(path))
-    return {k: v for k, v in item.items() if not k.startswith('_')}
+        for field in ('oversized_records', 'malformed_complete_lines', 'unterminated_tail_bytes', 'foreign_session_ids'):
+            require(not item.get(field), 'History needs review: ' + field + ': ' + str(path))
+    result = {k: v for k, v in item.items() if not k.startswith('_')}
+    if cache is not None:
+        require(result['sha256']==key[0], 'File changed during preservation')
+        cache[key]=result
+    return result
 
 
 def members(h, record, home=None):
@@ -497,13 +534,23 @@ def status(group, color, ids=None):
         'meaning': 'Readiness only. Current histories are freshly preserved and compared during Prepare; no files moved.'}
 
 
-def prepare(group, color, ids=None, survivor_source=None):
+def prepare(group, color, ids=None, survivor_source=None, survivor_sources=None, expected_evidence=None):
     h, maps = dependencies()
     require(not (RUNS / 'PENDING.json').exists(), 'A previous incomplete apply needs review; see Switch-Runs/PENDING.json')
     view = maps.load_verified(INDEX, MAP_HISTORY)
     rows = selected(view, group, ids)
+    choices = survivor_choices(rows,color,ids,survivor_source,survivor_sources)
+    skipped = [r['uuid'] for r in rows if norm(r['config_home'])==norm(ACCOUNTS[color]['home'])]
+    rows = [r for r in rows if r['uuid'] not in skipped]
+    if not rows:
+        return {'state':'NO_TRANSFER_NEEDED','sessions':0,'skipped_uuids':skipped}
+    ids = [r['uuid'] for r in rows]
+    if expected_evidence is not None:
+        require(digest(INDEX)==expected_evidence['index'], 'Current-home register changed since batch scan')
+        require(set(expected_evidence['sessions'])==set(ids), 'Batch evidence scope differs')
     emit_progress(f'PREPARE checking {len(rows)} selected conversations')
-    choose_source = validate_survivor_scope(rows, color, ids, survivor_source)
+    choose_source = bool(choices)
+    capture_cache = {}
     clear_runtime(h, rows)
     auth = auth_check(color)
     run = RUNS / (h.now().replace(':', '').replace('.', '') + '-' + uuid.uuid4().hex[:8])
@@ -513,29 +560,41 @@ def prepare(group, color, ids=None, survivor_source=None):
     target_home = Path(ACCOUNTS[color]['home'])
     manifest = {'schema': 'claude-self-service-switch/v1', 'prepared_at': h.now(), 'group': group, 'color': color,
         'engine_sha256': digest(__file__), 'index_sha256': digest(INDEX), 'auth': auth, 'sessions': [], 'memory': [],
-        'selected_uuids': sorted(ids) if ids else None, 'survivor_source': survivor_source}
+        'selected_uuids': sorted(ids), 'survivor_source': survivor_source,
+        'survivor_sources':dict(choices) if not survivor_source else {},
+        'batch_reviewed':expected_evidence is not None, 'skipped_uuids':skipped}
     try:
         for position, row in enumerate(rows, 1):
             emit_progress(f'PREPARE capturing conversation {position}/{len(rows)}: {row["label"]}')
             sid = row['uuid']; source_files = members(h, row); target_files = members(h, row, target_home)
             require('main' in source_files, 'Registered source history missing: ' + sid)
             ops = []
-            for rel, src in sorted(source_files.items(), key=lambda x: (x[0] == 'main', x[0])):
-                source = capture(h, src, objects, sid, rel == 'main', row['checkpoint'])
+            for file_number,(rel, src) in enumerate(sorted(source_files.items(), key=lambda x: (x[0] == 'main', x[0])),1):
+                if file_number==1 or file_number%100==0 or file_number==len(source_files):
+                    emit_progress(f'PREPARE {row["label"]}: file {file_number}/{len(source_files)}')
+                source = capture(h, src, objects, sid, rel == 'main', row['checkpoint'],capture_cache)
                 dst = destination(target_home, Path(row['primary_history_path']).parent.name, sid, rel)
-                before = capture(h, dst, objects, sid, rel == 'main', row['checkpoint']) if dst.exists() else None
+                before = capture(h, dst, objects, sid, rel == 'main', row['checkpoint'],capture_cache) if dst.exists() else None
                 ops.append({'relative': rel, 'source': source, 'before': before, 'destination': str(dst),
-                            'action': classify(source, before, rel == 'main', choose_source and rel == 'main')})
+                            'action': classify(source, before, rel == 'main', sid in choices and rel == 'main')})
             main = next(o['source'] for o in ops if o['relative'] == 'main')
             available = {Path(k).name for k in source_files if k.startswith('file-history/')}
             tools = {Path(k).name for k in source_files if k.startswith('sidecars/tool-results/')}
             held_refs = inherited_reference_holds(row, main, available, tools)
             manifest['sessions'].append({'record': row, 'source_members': {k: str(v) for k, v in source_files.items()}, 'target_members': {k: str(v) for k, v in target_files.items()}, 'operations': ops, 'inherited_reference_holds': held_refs})
-            if choose_source:
+            if choose_source or expected_evidence is not None:
                 manifest['sessions'][-1]['survivor_target_hashes'] = {k:digest(v) for k,v in target_files.items()}
+            if expected_evidence is not None:
+                expected = expected_evidence['sessions'][sid]
+                require({o['relative']:o['source']['sha256'] for o in ops}==expected['source'],
+                        'Source history or companions changed since batch scan: '+row['label'])
+                require(manifest['sessions'][-1]['survivor_target_hashes']==expected['target'],
+                        'Destination history or companions changed since batch scan: '+row['label'])
+                require(all(expected['target'].get(o['relative'])==o['before']['sha256'] for o in ops if o['before']),
+                        'Destination capture differs from batch scan: '+row['label'])
         emit_progress('PREPARE inspecting shared project memory')
         # A single-session survivor choice must not alter shared project memory.
-        if not choose_source:
+        if not choose_source and expected_evidence is None:
             seen = set()
             source_homes = {r['config_home'] for r in rows}
             buckets = {Path(r['primary_history_path']).parent.name for r in rows} | {SHARED_BUCKET}
@@ -551,8 +610,8 @@ def prepare(group, color, ids=None, survivor_source=None):
                         for name in files:
                             src = Path(base) / name; rel = src.relative_to(folder)
                             dst = target_home / 'projects' / bucket / 'memory' / rel
-                            source = capture(h, src, objects, 'memory')
-                            before = capture(h, dst, objects, 'memory') if dst.exists() else None
+                            source = capture(h, src, objects, 'memory',cache=capture_cache)
+                            before = capture(h, dst, objects, 'memory',cache=capture_cache) if dst.exists() else None
                             key = norm(dst)
                             previous = next((o for o in manifest['memory'] if norm(o['destination']) == key), None)
                             if previous:
@@ -566,7 +625,7 @@ def prepare(group, color, ids=None, survivor_source=None):
         for section in manifest['sessions']:
             require(members(h, section['record']) == {k: Path(v) for k, v in section['source_members'].items()}, 'Source companion membership changed')
             require(members(h, section['record'], target_home) == {k: Path(v) for k, v in section['target_members'].items()}, 'Target companion membership changed')
-            if choose_source:
+            if choose_source or expected_evidence is not None:
                 require({k:digest(v) for k,v in section['target_members'].items()} == section['survivor_target_hashes'],
                         'Destination companion content changed during preparation')
         for op in [o for s in manifest['sessions'] for o in s['operations']] + manifest['memory']:
@@ -588,19 +647,25 @@ def prepare(group, color, ids=None, survivor_source=None):
             'Source account data remains preserved. Background tasks and wakeups do not transfer.', '', 'Conversations:']
         report += [s['record']['label'] + ' | ' + s['record']['uuid'] for s in manifest['sessions']]
         report += ['', 'Main history survivor selection (both originals retained in run objects):'] + [
-            o['destination'] + ' | ' + survivor_source + '/source sha256 ' + o['source']['sha256']
+            o['destination'] + ' | ' + choices[section['record']['uuid']] + '/source sha256 ' + o['source']['sha256']
             + ' | displaced ' + color + ' sha256 ' + o['before']['sha256']
             for section in manifest['sessions'] for o in section['operations']
             if o['action'] == 'CHOOSE_SOURCE_MAIN_SURVIVOR']
         report += ['', 'Memory variants kept in the destination:'] + [o['destination'] for o in manifest['memory'] if o['action'] == 'KEEP_TARGET_MEMORY_VARIANT']
         report += ['', 'Companion variants: current registered source selected ONLY if explicitly accepted; displaced destination bytes retained:'] + [o['destination'] + ' | source ' + o['source']['sha256'] + ' | old target ' + o['before']['sha256'] for section in manifest['sessions'] for o in section['operations'] if o['action'] == 'REVIEW_CURRENT_COMPANION']
+        if expected_evidence is not None:
+            report += ['', 'Combined batch review. Shared project memory is unchanged. No automatic workspace launch.',
+                       'Exact survivor choices: '+json.dumps(choices,sort_keys=True)]
         (run / 'REVIEW.txt').write_text('\n'.join(report), encoding='utf-8')
         emit_progress('PREPARE review ready; no live histories changed')
         return {'state': manifest['state'], 'manifest': str(path), 'sha256': digest(path),
                 'review': str(run / 'REVIEW.txt'), 'sessions': len(rows),
                 'memory_variants': manifest['memory_variants'],
                 'companion_variants': manifest['companion_variants'],
-                'survivor_main_count': manifest['survivor_main_count']}
+                'survivor_main_count': manifest['survivor_main_count'],
+                'reused_snapshots':sum(bool(item.get('reused_snapshot')) for section in manifest['sessions']
+                                      for op in section['operations'] for item in (op['source'],op['before']) if item),
+                'skipped_uuids':skipped}
     except Exception as exc:
         h.write_new(run / 'HELD.json', {'state': 'PREPARE_HELD_NO_LIVE_FILES_CHANGED', 'error': str(exc)})
         raise
@@ -862,7 +927,7 @@ def apply(path, sha, accept_memory=False, open_window=False, accept_companions=F
     require(not m.get('companion_variants') or accept_companions, 'Review the differing undo/tool companions and explicitly select the current registered source set')
     color, group = m['color'], m['group']; target = Path(ACCOUNTS[color]['home'])
     rows = [s['record'] for s in m['sessions']]
-    choose_source = validate_survivor_manifest(m, rows, accept_survivor)
+    choices = validate_survivor_manifest(m, rows, accept_survivor)
     pending = RUNS / 'PENDING.json'
     with mutexes([r['uuid'] for r in rows]):
         require(not pending.exists(), 'An incomplete apply needs review; see ' + str(pending))
@@ -874,14 +939,14 @@ def apply(path, sha, accept_memory=False, open_window=False, accept_companions=F
         for s in m['sessions']:
             require(members(h, s['record']) == {k: Path(v) for k, v in s['source_members'].items()}, 'Source companions changed')
             require(members(h, s['record'], target) == {k: Path(v) for k, v in s['target_members'].items()}, 'Target companions changed')
-            if choose_source:
+            if choices or m.get('batch_reviewed'):
                 require({k:digest(v) for k,v in s['target_members'].items()} == s.get('survivor_target_hashes'),
                         'Destination companion content changed or survivor review is outdated; prepare again')
             for op in s['operations']:
                 want = destination(target, Path(s['record']['primary_history_path']).parent.name, s['record']['uuid'], op['relative'])
                 require(norm(want) == norm(op['destination']), 'Manifest target escaped its conversation')
                 require(classify(op['source'], op['before'], op['relative'] == 'main',
-                                 choose_source and op['relative'] == 'main') == op['action'],
+                                 s['record']['uuid'] in choices and op['relative'] == 'main') == op['action'],
                         'Transfer action changed')
         operations = [o for s in m['sessions'] for o in s['operations']] + [o for o in m['memory'] if not o['duplicate_target']]
         emit_progress(f'APPLY verifying {len(operations)} captured operations')
@@ -901,15 +966,22 @@ def apply(path, sha, accept_memory=False, open_window=False, accept_companions=F
             with (run / 'journal.jsonl').open('x', encoding='utf-8') as journal:
                 def log(value):
                     journal.write(json.dumps(value) + '\n'); journal.flush(); os.fsync(journal.fileno())
-                for i, op in enumerate(operations):
-                    if i % 25 == 0 or i + 1 == len(operations):
-                        emit_progress(f'APPLY writing operation {i + 1}/{len(operations)}')
+                writes=[(i,op) for i,op in enumerate(operations)
+                        if op['action'] not in ('KEEP','KEEP_TARGET_MEMORY_VARIANT')]
+                for position,(i,op) in enumerate(writes,1):
+                    if position == 1 or position % 25 == 0 or position == len(writes):
+                        emit_progress(f'APPLY writing operation {position}/{len(writes)}')
                     if op.get('relative') == 'main':
                         clear_runtime(h, rows)
                     log({'i': i, 'state': 'BEFORE', 'path': op['destination'], 'action': op['action']})
                     mutate(h, op, run, i)
                     log({'i': i, 'state': 'VERIFIED'})
             clear_runtime(h, rows)
+            # Unchanged files still have freshness gates; they need no mutation journal.
+            for op in operations:
+                if op['action'] in ('KEEP','KEEP_TARGET_MEMORY_VARIANT'):
+                    stable(h,op['source'])
+                    if op['before']:stable(h,op['before'])
             emit_progress('APPLY verifying final histories and publishing current-home register')
             maps.assert_unchanged(view)
             index = copy.deepcopy(view['index'])

@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: '22'
       - name: Self-contained Python subset (not the full engine)
-        run: python -B -m unittest test_account_inventory test_regularize test_usage_snapshot test_runtime_diagnostics test_switchboard_activity test_switchboard_instance test_switcher_ui_rows test_display_options test_group_consolidation test_workspace_consolidation.WorkspaceConsolidationTests test_survivor_review test_survivor_dialog -q
+        run: python -B -m unittest test_account_inventory test_regularize test_usage_snapshot test_runtime_diagnostics test_switchboard_activity test_switchboard_instance test_switcher_ui_rows test_display_options test_group_consolidation test_workspace_consolidation.WorkspaceConsolidationTests test_survivor_review test_survivor_dialog test_batch_choices test_batch_dialog -q
       - name: Standalone launcher tests (not VS Code extension-host tests)
         run: node --test vscode-extension/test-launcher.js
       - name: Syntax-check all Python sources without importing helpers

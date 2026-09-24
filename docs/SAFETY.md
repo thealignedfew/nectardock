@@ -35,6 +35,12 @@ reference gaps stay explicit; prior exceptions cannot excuse new gaps.
 
 ## Remaining work
 
+Workspace grouping is not history relocation. Multi-root groups keep each session's
+native project and storage path. Consolidation preserves settings and exact recovery
+bytes, checks the initial read fingerprint again before publication, and refuses to
+retire a source workspace with saved conversation tabs. Partial publication holds
+for review rather than automatically rolling back over possible newer writes.
+
 General cross-account drift checks on every launch path, native-picker retirement,
 crash-consistent multi-file transactions and clean-machine packaging are not proven
 by this preview. An unenforced old-copy flag is not a verified cut.

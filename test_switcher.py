@@ -309,6 +309,7 @@ class TransferSafety(unittest.TestCase):
         row={'uuid':'a','label':'BI-A','config_home':s.ACCOUNTS['GREEN']['home']}
         maps=SimpleNamespace(load_verified=lambda *_: {})
         with patch.object(s,'dependencies',return_value=(None,maps)), \
+             patch.object(s,'BASE',self.root), \
              patch.object(s,'selected',return_value=[row]), \
              patch.object(s,'restored_workspace_tabs',return_value=[]), \
              patch.object(s,'auth_check',return_value=auth) as checked, patch.object(s,'launch') as launched:

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.3 source preview
+
+- A workspace group can contain multiple native project roots. Catalog, selection,
+  folder validation and discovery agree on membership without rewriting each
+  conversation's project, native UUID or account.
+- Added guarded workspace-only consolidation with exact metadata backups and
+  history hash verification. Unexpected roots or saved source-workspace tabs hold.
+- Partial publication retains the recovery marker. Concurrent configuration edits
+  are checked against the exact initially parsed bytes, including unchanged targets.
+- The example folds the Compliance project into the Analytics launch group.
+  Existing native Recent entries are not rewritten in a running VS Code profile.
+- Verified 59 self-contained Python tests and 4 launcher tests. The broader private
+  environment passed 141 Python tests; that is not clean-machine or GUI certification.
+
 ## 0.2.2 source preview
 
 First sanitized source checkpoint. This is not the first operational build and

@@ -48,18 +48,18 @@ mobile pairing endpoint, or remote mutation API in this repository.
 On Windows with Python 3.11 (including Tk) and Node.js 22:
 
 ```powershell
-python -B -m unittest test_account_inventory test_regularize test_usage_snapshot test_runtime_diagnostics test_switchboard_activity test_switchboard_instance test_switcher_ui_rows test_display_options -q
+python -B -m unittest test_account_inventory test_regularize test_usage_snapshot test_runtime_diagnostics test_switchboard_activity test_switchboard_instance test_switcher_ui_rows test_display_options test_group_consolidation test_workspace_consolidation.WorkspaceConsolidationTests -q
 node --test vscode-extension/test-launcher.js
 ```
 
-The initial sanitized snapshot passes 52 Python tests and four standalone Node
+The 0.2.3 sanitized snapshot passes 59 Python tests and four standalone Node
 tests. These use synthetic data and do not launch provider sessions. The separate
 VS Code extension-host test requires an actual extension test host and is not
 covered by the command above. It checks activation and command registration only,
 not backend diagnostics or workspace launch success.
 
-The private operational baseline passed 128 Python tests. That broader result does
-not imply the 76 helper-dependent tests can run in this repository. CI deliberately
+The 0.2.3 private operational baseline passed 141 Python tests. That broader result does
+not imply the 82 helper-dependent tests can run in this repository. CI deliberately
 runs only the self-contained set and reports this boundary.
 
 ## Where to start

@@ -9,6 +9,9 @@
 !/account_inventory.py
 !/app_metadata.py
 !/reconcile_home.py
+!/consolidate_groups.py
+!/test_group_consolidation.py
+!/test_workspace_consolidation.py
 !/registration.py
 !/regularize.py
 !/switchboard_activity.py

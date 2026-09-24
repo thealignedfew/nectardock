@@ -41,7 +41,7 @@ ACCOUNTS = {
 }
 GROUPS = {
     'FPA': 'Finance', 'GCP': 'Cloud',
-    'BI': 'Analytics', 'VAT': 'Compliance',
+    'BI': ('Analytics', 'Compliance'),
 }
 PROJECTS = Path('D:/NectarDockExample/Projects')
 OVERRIDES = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AWS_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST', 'CLAUDE_CODE_PROJECT_DIR_NAME')
@@ -133,9 +133,16 @@ def validate_auth(color, data):
         'Destination account does not match ' + color + '. No files moved.')
 
 
+def group_projects(group):
+    """A launch group may contain several native projects; never rewrite their identity."""
+    require(group in GROUPS, 'Unknown workspace group')
+    names = GROUPS[group]
+    return [PROJECTS / name for name in ((names,) if isinstance(names, str) else names)]
+
+
 def selected(view, group, ids=None):
-    project = norm(PROJECTS / GROUPS[group]).rstrip('\\/')
-    rows = [r for r in view['records'].values() if norm(r['project_directory']).rstrip('\\/') == project]
+    projects = {norm(p).rstrip('\\/') for p in group_projects(group)}
+    rows = [r for r in view['records'].values() if norm(r['project_directory']).rstrip('\\/') in projects]
     if ids:
         wanted = set(ids)
         rows = [r for r in rows if r['uuid'] in wanted]
@@ -669,14 +676,15 @@ def workspace(group, color):
         path = plain(Path(account['workspace_root']) / (group + '-' + color + '.code-workspace'))
         doc = json.loads(path.read_text(encoding='utf-8'))
         folders = doc.get('folders', [])
-        require(len(folders) == 1 and norm(folders[0].get('path', '')) == norm(PROJECTS / GROUPS[group]),
+        require([norm(f.get('path', '')).rstrip('\\/') for f in folders] ==
+                [norm(p).rstrip('\\/') for p in group_projects(group)],
                 'Account workspace points to an unexpected project')
         require(doc.get('settings', {}).get('window.title', '').startswith(color + ' |'),
                 'Account workspace title does not identify its color')
         return path
     path = BASE / 'workspaces' / (group + '-' + color + '.code-workspace')
     path.parent.mkdir(exist_ok=True)
-    expected = {'folders': [{'name': GROUPS[group], 'path': str(PROJECTS / GROUPS[group])}], 'settings': {
+    expected = {'folders': [{'name': p.name, 'path': str(p)} for p in group_projects(group)], 'settings': {
         'window.title': color + ' | ' + group + ' | ${activeEditorShort}', 'workbench.colorTheme': ACCOUNTS[color]['theme'],
         'workbench.colorCustomizations': {'titleBar.activeBackground': ACCOUNTS[color]['color'], 'titleBar.activeForeground': '#FFFFFF', 'statusBar.background': ACCOUNTS[color]['color'], 'statusBar.foreground': '#FFFFFF'},
         'git.openRepositoryInParentFolders': 'never', 'search.followSymlinks': False, 'python.analysis.indexing': False,
@@ -793,15 +801,17 @@ def workspace_catalog():
     view = maps.load_verified(INDEX, MAP_HISTORY)
     workspaces = []
     for color, account in ACCOUNTS.items():
-        for group, project in GROUPS.items():
+        for group in GROUPS:
+            projects = group_projects(group)
+            project_keys = {norm(p).rstrip('\\/') for p in projects}
             sessions = sorted([{'uuid': r['uuid'], 'label': r['label']}
                 for r in view['records'].values()
                 if norm(r['config_home']) == norm(account['home']) and
-                norm(r['project_directory']).rstrip('\\/') == norm(PROJECTS / project).rstrip('\\/')],
+                norm(r['project_directory']).rstrip('\\/') in project_keys],
                 key=lambda r: (r['label'], r['uuid']))
             if sessions:
                 workspaces.append({'account': color, 'group': group, 'email': account['email'],
-                                   'plan': account['plan'], 'project': project, 'sessions': sessions})
+                                   'plan': account['plan'], 'project': ' + '.join(p.name for p in projects), 'sessions': sessions})
     return {'state': 'CATALOG', 'workspaces': workspaces}
 
 

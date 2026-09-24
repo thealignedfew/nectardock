@@ -14,11 +14,11 @@ import switcher as s
 
 
 RUNS = s.BASE / 'Registration-Runs'
-BUCKETS = {
-    'FPA': 'd--NectarDockExample-Projects-Finance',
-    'GCP': 'd--NectarDockExample-Projects-Cloud',
-    'BI': 'd--NectarDockExample-Projects-Analytics',
-    'VAT': 'd--NectarDockExample-Projects-Compliance',
+PROJECT_BUCKETS = {
+    'Finance': 'd--NectarDockExample-Projects-Finance',
+    'Cloud': 'd--NectarDockExample-Projects-Cloud',
+    'Analytics': 'd--NectarDockExample-Projects-Analytics',
+    'Compliance': 'd--NectarDockExample-Projects-Compliance',
 }
 UUID = re.compile(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z')
 
@@ -64,21 +64,23 @@ def native_title(path, sid):
 
 
 def discover(group, view=None):
-    s.require(group in BUCKETS, 'Unknown workspace group')
+    s.require(group in s.GROUPS, 'Unknown workspace group')
     view = view or verified_view()
     found = {}
     for color, account in s.ACCOUNTS.items():
-        folder = s.plain(Path(account['home']) / 'projects' / BUCKETS[group])
-        if not folder.is_dir():
-            continue
-        for path in folder.glob('*.jsonl'):
-            sid = path.stem
-            if not UUID.fullmatch(sid) or sid in view['records']:
+        for project in s.group_projects(group):
+            folder = s.plain(Path(account['home']) / 'projects' / PROJECT_BUCKETS[project.name])
+            if not folder.is_dir():
                 continue
-            s.plain(path)
-            stat = path.stat()
-            found.setdefault(sid, []).append({'color': color, 'path': str(path),
-                'bytes': stat.st_size, 'modified_ns': stat.st_mtime_ns})
+            for path in folder.glob('*.jsonl'):
+                sid = path.stem
+                if not UUID.fullmatch(sid) or sid in view['records']:
+                    continue
+                s.plain(path)
+                stat = path.stat()
+                found.setdefault(sid, []).append({'color': color, 'path': str(path),
+                    'project_directory': str(project),
+                    'bytes': stat.st_size, 'modified_ns': stat.st_mtime_ns})
     result = []
     for sid, copies in found.items():
         copies.sort(key=lambda item:item['color'])
@@ -90,7 +92,7 @@ def discover(group, view=None):
 
 
 def selection(group, color, ids, view):
-    s.require(color in s.ACCOUNTS and group in BUCKETS, 'Unknown account or group')
+    s.require(color in s.ACCOUNTS and group in s.GROUPS, 'Unknown account or group')
     s.require(ids and len(ids) == len(set(ids)) and all(UUID.fullmatch(sid) for sid in ids),
               'Select unique exact UUIDs')
     items = {item['uuid']:item for item in discover(group, view)}
@@ -107,7 +109,7 @@ def selection(group, color, ids, view):
 def provisional_rows(group, color, items):
     return [{'uuid':item['uuid'], 'label':item['label'], 'config_home':s.ACCOUNTS[color]['home'],
              'primary_history_path':item['copies'][0]['path'],
-             'project_directory':str(s.PROJECTS / s.GROUPS[group])} for item in items]
+             'project_directory':item['copies'][0]['project_directory']} for item in items]
 
 
 def prepare(group, color, ids):
@@ -244,7 +246,7 @@ def apply(path, sha):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode',choices=['discover','prepare','apply'])
-    parser.add_argument('--group',choices=BUCKETS)
+    parser.add_argument('--group',choices=s.GROUPS)
     parser.add_argument('--account',choices=s.ACCOUNTS)
     parser.add_argument('--uuid',action='append')
     parser.add_argument('--manifest');parser.add_argument('--sha256')

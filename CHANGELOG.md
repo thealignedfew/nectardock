@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.6 source preview
+
+- Added a same-user, non-elevated Windows Task Scheduler broker for persistent
+  app, workspace and login launches. It avoids inheriting an AI host's nested
+  kill-on-close jobs without modifying those jobs or closing existing applications.
+- Uses a protected installation-side queue, exact action/account/group/UUID
+  allowlists, expiring one-use requests and atomic receipts. Dispatch uncertainty
+  remains visible with a request location and no automatic retry.
+- Requires a certified receipt for reuse of an existing job-bound Code process,
+  matching PID, creation time and profile. Post-launch certification failures
+  are not reported as no launch. Existing account/history checks remain enforced.
+- Disposable scheduled-child lifetime and synthetic regression tests passed locally.
+  Real host-restart acceptance of production apps remains user-controlled.
+  Automatic Developer: Reload Window is not enabled in this release.
+- See [Independent desktop launcher](docs/INDEPENDENT-LAUNCHER.md) for setup,
+  evidence and limits. This remains source preview, not a packaged release.
+
 ## 0.2.5 source preview
 
 - Added a batch transition table that collects all selected conflicts before backups,

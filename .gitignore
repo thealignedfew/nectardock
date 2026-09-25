@@ -8,6 +8,9 @@
 !/SECURITY.md
 !/account_inventory.py
 !/app_metadata.py
+!/desktop_launcher.py
+!/install_desktop_launcher.ps1
+!/test_desktop_launcher.py
 !/reconcile_home.py
 !/consolidate_groups.py
 !/test_group_consolidation.py
@@ -59,6 +62,7 @@
 !/docs/SAFETY.md
 !/docs/ROADMAP.md
 !/docs/PUBLICATION.md
+!/docs/INDEPENDENT-LAUNCHER.md
 /assets/*
 !/assets/branding/
 /assets/branding/*

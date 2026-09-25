@@ -14,6 +14,10 @@ import switcher as s
 
 class TransferSafety(unittest.TestCase):
     def setUp(self):
+        # Existing backend tests model an independent desktop caller. Broker
+        # routing is exercised separately with job-bound process fixtures.
+        lifetime=patch('desktop_launcher.needs_broker',return_value=False)
+        lifetime.start();self.addCleanup(lifetime.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.h, self.maps = s.dependencies()

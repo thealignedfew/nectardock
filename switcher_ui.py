@@ -278,18 +278,27 @@ def merge_usage_snapshot(previous, update, color=None):
     return merged
 
 
-def restart_application(gate, launcher, executable, script, frozen=None):
+def restart_application(gate, launcher=None):
     """Release the singleton before launching a process that reads current disk state."""
     if gate:
         gate.release()
-    if frozen is None:
-        frozen = bool(getattr(sys, 'frozen', False))
-    argv = [executable] if frozen else [executable, script]
-    return launcher(argv, cwd=str(engine.BASE), creationflags=0x08000000)
+    if launcher is None:
+        from desktop_launcher import request
+        launcher=request
+    return launcher('ui')
 
 
 def main():
     smoke = os.environ.get('SWITCHBOARD_SMOKE') == '1'
+    if not smoke:
+        import desktop_launcher
+        try:
+            if desktop_launcher.needs_broker():
+                desktop_launcher.request('ui')
+                return
+        except Exception as exc:
+            ctypes.windll.user32.MessageBoxW(None,str(exc),'NectarDock launch held',0x10)
+            return
     gate = None if smoke else InstanceGate()
     if gate and not gate.enter():
         ctypes.windll.user32.MessageBoxW(
@@ -1005,8 +1014,8 @@ def main():
     finally:
         if reload_requested[0]:
             try:
-                restart_application(gate, subprocess.Popen, sys.executable, str(Path(__file__).resolve()))
-            except OSError as exc:
+                restart_application(gate)
+            except (OSError,RuntimeError) as exc:
                 ctypes.windll.user32.MessageBoxW(None, str(exc), 'Switchboard reload failed', 0x10)
         elif gate:
             gate.release()

@@ -105,6 +105,16 @@ class BatchIntegration(unittest.TestCase):
         s.apply(plan['manifest'],plan['sha256'],accept_survivor=True)
         self.assertEqual((y2.read_bytes(),p2.read_bytes()),before)
 
+    def test_apply_preserves_uncertain_launch_after_completed_history_move(self):
+        b=self.batch();scan=b.scan('BI','YELLOW',[fixture.SID])
+        plan=b.prepare(scan['review'],scan['sha256'],{fixture.SID:'source'})
+        with patch.object(s,'open_workspace',side_effect=RuntimeError('Desktop launch outcome uncertain: request-123')):
+            result=s.apply(plan['manifest'],plan['sha256'],accept_survivor=True,open_window=True)
+        self.assertEqual(result['state'],'SWITCH_COMPLETE_SAVED_HISTORIES_READY')
+        self.assertIn('OUTCOME_UNCERTAIN',result['workspace_launch'])
+        self.assertIn('request-123',result['workspace_launch'])
+        self.assertIn('No automatic retry',result['workspace_launch_guidance'])
+
     def test_changed_history_after_scan_cannot_prepare(self):
         b=self.batch();scan=b.scan('BI','YELLOW',[fixture.SID]);before=self.index.read_bytes()
         self.y.write_bytes(self.y.read_bytes()+b'{}\n')

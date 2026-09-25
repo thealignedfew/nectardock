@@ -14,6 +14,8 @@ private values and commit the result.
 
 - Shows registered conversations and their account/workspace associations.
 - Opens account-isolated VS Code workspaces with selection and saved-tab checks.
+- Brokers persistent Windows launches outside the requesting AI app's lifetime.
+  See [launcher setup and acceptance limits](docs/INDEPENDENT-LAUNCHER.md).
 - Stages reviewed saved-history transitions with preservation and recovery evidence.
 - Collects selected conversations into one batch review with explicit survivor choices
   and exclusions, then applies the reviewed batch once without launching sessions.

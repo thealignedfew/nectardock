@@ -111,6 +111,9 @@ def auth_check(color):
 def launch_login(color):
     """Open an interactive subscription login in one isolated account home."""
     require(color in ACCOUNTS, 'Unknown Claude account color')
+    import desktop_launcher
+    if desktop_launcher.needs_broker():
+        return desktop_launcher.request('login',color=color)
     account = ACCOUNTS[color]
     command = "& '" + str(CLAUDE_CMD).replace("'", "''") + "' auth login --claudeai --email " + account['email']
     process = subprocess.Popen(
@@ -816,16 +819,28 @@ def restored_workspace_tabs(user_data, workspace_path):
 
 
 def launch(group, color):
+    import desktop_launcher
+    require(not desktop_launcher.needs_broker(),
+            'Use the independent Open destination workspace launcher with exact selected conversations')
     account = ACCOUNTS[color]
     user_data = account.get('fpa_user_data', account['user_data']) if group == 'FPA' else account['user_data']
-    assert_single_vscode_instance(user_data)
+    existing=assert_single_vscode_instance(user_data)
     settings = json.loads((Path(user_data) / 'User/settings.json').read_text(encoding='utf-8-sig'))
     envs = {v['name']: v['value'] for v in settings.get('claudeCode.environmentVariables', [])}
     require(norm(envs.get('CLAUDE_CONFIG_DIR', '')) == norm(account['home']), 'VS Code profile home mismatch')
     require(not any(envs.get(k) for k in OVERRIDES), 'VS Code profile has a provider override')
-    # GUI calls run outside Codex. No cursor injection or model prompt.
-    subprocess.Popen([str(CODE), '--new-window', '--user-data-dir', str(Path(user_data).resolve()), str(workspace(group, color))],
+    # A new console/process group does not escape a host's Windows job.
+    process = subprocess.Popen([str(CODE), '--new-window', '--user-data-dir', str(Path(user_data).resolve()), str(workspace(group, color))],
         env=account_env(color), creationflags=0x00000200, close_fds=True)
+    result={'pid':process.pid,'lifetime':'INDEPENDENT_LAUNCH_REQUESTED'}
+    try:
+        if not existing and process.poll() is None:
+            desktop_launcher.record_code_child(process.pid,user_data)
+    except Exception as exc:
+        result.update(lifetime='VERIFICATION_UNAVAILABLE_AFTER_LAUNCH',
+            warning=f'Code launch was already requested (PID {process.pid}), but lifetime certification failed: {exc}. '
+                    'Do not retry blindly. Inspect the opened window and runtime diagnostics first.')
+    return result
 
 
 def vscode_instance_diagnostics(processes=None):
@@ -855,6 +870,7 @@ def vscode_instance_diagnostics(processes=None):
     conflicts = [{'user_data': home, 'processes': members} for home, members in groups.items() if len(members) > 1]
     return {'state': 'CONFLICT' if conflicts else 'NO_DUPLICATE_ACCOUNT_INSTANCES_OBSERVED',
             'conflicts': conflicts,
+            'instances': processes,
             'meaning': 'Read-only snapshot of explicit account profiles. No process closed; not a webview health check.'}
 
 
@@ -863,6 +879,11 @@ def assert_single_vscode_instance(user_data):
     conflicts = [c for c in data['conflicts'] if norm(c['user_data']) == norm(user_data)]
     require(not conflicts, 'This account has multiple VS Code main processes for one user-data directory. '
             'No additional launch requested. Use Runtime diagnostics and reconcile those instances before reopening.')
+    import desktop_launcher
+    for process in data.get('instances',[]):
+        if norm(process['user_data'])==norm(user_data):
+            desktop_launcher.assert_existing_code_safe(process['pid'],user_data)
+    return [p for p in data.get('instances',[]) if norm(p['user_data'])==norm(user_data)]
 
 
 def workspace_catalog():
@@ -888,6 +909,9 @@ def workspace_catalog():
 def open_workspace(group, color, ids=None):
     require(group in GROUPS and color in ACCOUNTS, 'Choose a known workspace and destination account')
     require(ids, 'Select registered conversations before opening a destination workspace; opening does not transfer history')
+    import desktop_launcher
+    if desktop_launcher.needs_broker():
+        return desktop_launcher.request('workspace',group=group,color=color,ids=list(ids))
     _, maps = dependencies()
     view = maps.load_verified(INDEX, MAP_HISTORY)
     rows = selected(view, group, ids)
@@ -906,9 +930,10 @@ def open_workspace(group, color, ids=None):
             ', '.join(tab['title'] + ' (' + tab['sessionId'] + ')' for tab in outside) +
             '. Select those registered destination sessions too, or close only their tabs in the existing window.')
     auth = auth_check(color)
-    launch(group, color)
+    launch_details=launch(group, color)
     return {'state': 'WORKSPACE_LAUNCH_REQUESTED', 'group': group, 'destination': color,
             'auth': auth, 'workspace_launch': 'REQUESTED_NOT_GUI_VERIFIED',
+            'launch_details':launch_details,
             'selected_history_uuids_verified': [row['uuid'] for row in rows],
             'saved_workspace_tabs_observed': tabs,
             'runtime_adoption': 'NOT_CLAIMED'}
@@ -1015,9 +1040,11 @@ def apply(path, sha, accept_memory=False, open_window=False, accept_companions=F
             raise
     if open_window:
         try:
-            launch(group, color); receipt['workspace_launch'] = 'REQUESTED_NOT_GUI_VERIFIED'
+            receipt['workspace_launch_details']=open_workspace(group, color, [row['uuid'] for row in rows])
+            receipt['workspace_launch'] = 'REQUESTED_NOT_GUI_VERIFIED'
         except Exception as exc:
-            receipt['workspace_launch'] = 'NOT_OPENED: ' + str(exc)
+            receipt['workspace_launch'] = 'HELD_OR_OUTCOME_UNCERTAIN: ' + str(exc)
+            receipt['workspace_launch_guidance'] = 'No automatic retry. Inspect the diagnostic and any request receipt before reopening.'
     return receipt
 
 

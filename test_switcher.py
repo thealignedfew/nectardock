@@ -217,8 +217,8 @@ class TransferSafety(unittest.TestCase):
 
     def test_unreviewed_version_is_not_excluded(self):
         item,evidence=self.support_fixture()
-        evidence['exe']=evidence['exe'].replace('2.1.280','2.1.281')
-        evidence['command']=evidence['command'].replace('2.1.280','2.1.281')
+        evidence['exe']=evidence['exe'].replace('2.1.280','2.1.999')
+        evidence['command']=evidence['command'].replace('2.1.280','2.1.999')
         self.assertFalse(s.support_only(item,evidence))
 
     def test_closed_unverified_helper_stays_unknown(self):

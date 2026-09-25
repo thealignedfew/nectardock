@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.8 source preview
+
+- Recognize the reviewed Claude Code 2.1.281 Chrome MCP helper alongside 2.1.280.
+  Extension version drift caused a false unknown-conversation hold. Exact path,
+  helper mode and process-start checks remain mandatory; unreviewed versions and
+  extra arguments remain blocked. No process or native runtime registry is changed.
+- Added regression coverage for the new helper and preserved negative cases.
+
 ## 0.2.7 source preview
 
 - Fixed discovery of histories whose names are saved as native `ai-title` records.

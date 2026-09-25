@@ -182,8 +182,15 @@ def support_reason(item, evidence):
         if any(arguments == 'auth login --claudeai --email ' + a['email'] for a in accounts):
             return 'EXACT_ACCOUNT_AUTH_LOGIN_NOT_CONVERSATION'
         return None
-    expected = Path('C:/Users/ExampleUser/.vscode/extensions/anthropic.claude-code-2.1.280-win32-x64/resources/native-binary/claude.exe')
-    if norm(binary) == norm(expected) and arguments == '--claude-in-chrome-mcp':
+    # Reviewed installed releases only. Extension updates can otherwise turn a
+    # Chrome MCP helper into a false unknown-writer hold. Never wildcard versions
+    # or arguments; keep the process-start fence above and uncertain writers held.
+    expected = {
+        norm(Path('C:/Users/ExampleUser/.vscode/extensions') /
+             ('anthropic.claude-code-' + version + '-win32-x64/resources/native-binary/claude.exe'))
+        for version in ('2.1.280', '2.1.281')
+    }
+    if norm(binary) in expected and arguments == '--claude-in-chrome-mcp':
         return 'EXACT_INSTALLED_CHROME_MCP_MODE'
     return None
 

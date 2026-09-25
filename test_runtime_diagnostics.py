@@ -49,6 +49,22 @@ class RuntimeDiagnostics(unittest.TestCase):
         evidence['command'] = f'"{evidence["exe"]}" auth status'
         self.assertTrue(s.support_only(item, evidence))
 
+    def test_reviewed_281_chrome_helper_is_not_a_conversation(self):
+        item, evidence = self.fixture()
+        exe = 'C:/Users/ExampleUser/.vscode/extensions/anthropic.claude-code-2.1.281-win32-x64/resources/native-binary/claude.exe'
+        evidence.update(exe=exe, command=f'"{exe}" --claude-in-chrome-mcp')
+        self.assertEqual(s.support_reason(item, evidence), 'EXACT_INSTALLED_CHROME_MCP_MODE')
+
+    def test_chrome_helper_still_requires_exact_reviewed_path_mode_and_start(self):
+        item, evidence = self.fixture()
+        exe = 'C:/Users/ExampleUser/.vscode/extensions/anthropic.claude-code-2.1.281-win32-x64/resources/native-binary/claude.exe'
+        evidence.update(exe=exe, command=f'"{exe}" --claude-in-chrome-mcp')
+        for changed in [dict(evidence, start='124'),
+                        dict(evidence, command=evidence['command']+' --resume abc'),
+                        dict(evidence, exe=exe.replace('2.1.281', '2.1.999'),
+                             command=evidence['command'].replace('2.1.281', '2.1.999'))]:
+            self.assertFalse(s.support_only(item, changed))
+
     def test_unknown_hold_reports_pid_without_raw_command(self):
         census = {'bindings': [], 'unknown_live': [{'pid': 42, 'error': 'unresolved'}],
                   'registry_errors': [], 'verified_support_only': []}

@@ -17,6 +17,31 @@ command adopts an existing target only when its main history equals or byte-exte
 the registered source and source companions are present and hash-identical.
 Different histories require an explicit, separately reviewed survivor/merge decision.
 
+## A later timestamp is not a complete history
+
+Two branches can share a prefix and then diverge. A shorter branch can have a later
+assistant output time without containing the longer branch's work. The survivor
+dialog reports exact record comparison, recorded times and bounded text previews
+separately. It does not score or automatically pick a winner.
+
+An explicit source-survivor choice replaces the destination main history rather
+than merging branches. Both originals are preserved, all compared companion hashes
+are fenced, and a change after review requires a new review. A successful saved-file
+operation does not prove native runtime adoption or retire the old source copy.
+
+## Batch review is not automatic survivor selection
+
+The scan lists every selected row before preservation begins. Each distinct branch
+requires an explicit registered-source choice or exclusion. Bulk choices preserve
+prior exclusions. Already-destination conversations are no-ops. Known live writers
+are individually held; unresolved process identity holds pending rows.
+
+The prepared batch is bound to the exact scanned register, membership and content.
+Apply rechecks all included rows before writing. A partial failure retains checkpoints,
+journal and a recovery marker; it is not an atomic rollback or a completed batch.
+Identical snapshots can be reused only within one preparation after hash validation.
+KEEP actions skip mutation journaling, not freshness checks. Shared memory stays unchanged.
+
 ## Unknown is not empty
 
 Directory traversal errors must stop completeness-dependent operations. A walk
@@ -34,6 +59,12 @@ instead of automatically rolling back over potentially newer work. Existing know
 reference gaps stay explicit; prior exceptions cannot excuse new gaps.
 
 ## Remaining work
+
+Workspace grouping is not history relocation. Multi-root groups keep each session's
+native project and storage path. Consolidation preserves settings and exact recovery
+bytes, checks the initial read fingerprint again before publication, and refuses to
+retire a source workspace with saved conversation tabs. Partial publication holds
+for review rather than automatically rolling back over possible newer writes.
 
 General cross-account drift checks on every launch path, native-picker retirement,
 crash-consistent multi-file transactions and clean-machine packaging are not proven

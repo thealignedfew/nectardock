@@ -17,11 +17,23 @@ from switchboard_activity import ActivityRecorder, run_json_command
 from switchboard_instance import InstanceGate
 from switchboard_preferences import DEFAULTS, PREFERENCES_PATH, load_preferences, save_preferences, validate_preferences
 from app_metadata import APP_NAME, APP_VERSION, PUBLISHER, RELEASE_CHANNEL
+from survivor_dialog import SurvivorDialog
+from survivor_review import conflict_uuid
+from batch_dialog import BatchDialog
 
 
 ACCOUNT_INKS = {'GREEN':'#78D6A0', 'YELLOW':'#FFE066', 'ORANGE':'#FFB278',
                 'PURPLE':'#D9B3FF', 'BLUE':'#89BEFF'}
 USAGE_BUCKETS = {'Fable':'fable', '5-hour':'five_hour', 'Weekly':'seven_day'}
+
+
+def start_tracked_worker(jobs,worker):
+    jobs[0]+=1
+    try:
+        threading.Thread(target=worker,daemon=True).start()
+    except Exception:
+        jobs[0]-=1
+        raise
 
 
 def usage_percent(row, bucket):
@@ -266,18 +278,27 @@ def merge_usage_snapshot(previous, update, color=None):
     return merged
 
 
-def restart_application(gate, launcher, executable, script, frozen=None):
+def restart_application(gate, launcher=None):
     """Release the singleton before launching a process that reads current disk state."""
     if gate:
         gate.release()
-    if frozen is None:
-        frozen = bool(getattr(sys, 'frozen', False))
-    argv = [executable] if frozen else [executable, script]
-    return launcher(argv, cwd=str(engine.BASE), creationflags=0x08000000)
+    if launcher is None:
+        from desktop_launcher import request
+        launcher=request
+    return launcher('ui')
 
 
 def main():
     smoke = os.environ.get('SWITCHBOARD_SMOKE') == '1'
+    if not smoke:
+        import desktop_launcher
+        try:
+            if desktop_launcher.needs_broker():
+                desktop_launcher.request('ui')
+                return
+        except Exception as exc:
+            ctypes.windll.user32.MessageBoxW(None,str(exc),'NectarDock launch held',0x10)
+            return
     gate = None if smoke else InstanceGate()
     if gate and not gate.enter():
         ctypes.windll.user32.MessageBoxW(
@@ -363,6 +384,7 @@ def main():
     ttk.Label(frame,text='Select only the conversations to move. Ctrl/Shift selects multiple rows; nothing is preselected. Modified time and version come from saved history, not live runtime.').pack(anchor='w',pady=6)
     buttons = ttk.Frame(frame);buttons.pack(fill='x',pady=6)
     prepared = [None]; regularization_prepared = [None]; busy = [False]; auxiliary_jobs = [0]
+    active_dialog = [None]
     reload_requested = [False]
     variants = tk.BooleanVar(value=False)
     check = ttk.Checkbutton(frame,variable=variants,text='I reviewed the variant list: preserve old copies, use the current source companions, and keep existing destination memory notes.')
@@ -380,6 +402,9 @@ def main():
         except OSError:
             line=f'[{dt.datetime.now().astimezone():%Y-%m-%d %H:%M:%S %Z}] {message} [disk log unavailable]'
         activity_entries.append(line)
+        dialog=active_dialog[0]
+        if dialog is not None and dialog.busy and dialog.window.winfo_exists():
+            dialog.status.set(str(message))
         panel=activity_text[0]
         if panel is not None and panel.winfo_exists():
             panel.configure(state='normal');panel.insert('end',line+'\n')
@@ -478,6 +503,12 @@ def main():
         regularization_apply.configure(state='normal' if regularization_prepared[0] else 'disabled')
         if result.get('state')=='SWITCH_COMPLETE_SAVED_HISTORIES_READY':
             messagebox.showinfo('Switch complete','Saved histories and the account map are updated. The destination workspace has been requested. Resume the original conversations in Claude Code history. Select effort before your next prompt; monitors and AutoClaude participation are not rearmed.')
+        sid=conflict_uuid(result,tree.get_children())
+        if sid and messagebox.askyesno('Compare the conflicting histories?',
+                'This conversation has distinct saved branches. Compare both accounts and choose whether to use '
+                'the registered source as the survivor? Nothing is replaced until you review and apply.',parent=root):
+            tree.selection_set(sid)
+            root.after_idle(open_survivor)
 
     def run(mode):
         if busy[0]:return
@@ -526,10 +557,11 @@ def main():
         if prepared[0]:os.startfile(prepared[0]['review'])
         else:messagebox.showinfo('No prepared review','Run Prepare first.')
 
-    for label,command in [('Select all',lambda:tree.selection_set(tree.get_children())),('Clear',lambda:tree.selection_remove(tree.selection())),('Refresh table',manual_refresh),('Check readiness',lambda:run('status')),('Prepare transition',lambda:run('prepare')),('Open transition review',review),('Open destination workspace',lambda:run('open'))]:
+    for label,command in [('Select all',lambda:tree.selection_set(tree.get_children())),('Clear',lambda:tree.selection_remove(tree.selection())),('Refresh table',manual_refresh),('Check readiness',lambda:run('status')),('Prepare transition (batch)',lambda:open_batch()),('Open destination workspace',lambda:run('open'))]:
         b=ttk.Button(buttons,text=label,command=command);b.pack(side='left',padx=(0,8));widgets.append(b)
     apply_button=ttk.Button(buttons,text='Apply and open workspace',command=lambda:run('apply'),state='disabled')
-    apply_button.pack(side='right');widgets.append(apply_button)
+    # Retained for legacy command bookkeeping; new transfers are reviewed/applied in the batch dialog.
+    widgets.append(apply_button)
     diagnostic_button=ttk.Button(root,text='Runtime diagnostics',command=lambda:run('diagnose'))
     diagnostic_button.pack(anchor='w',padx=12);widgets.append(diagnostic_button)
 
@@ -600,7 +632,6 @@ def main():
     utilities = ttk.Frame(frame); utilities.pack(fill='x', pady=(5,2))
 
     def child_json(script, args, callback):
-        auxiliary_jobs[0] += 1
         def worker():
             try:
                 data=execute_logged(script,args)
@@ -611,7 +642,50 @@ def main():
                 auxiliary_jobs[0] -= 1
                 callback(data)
             root.after(0, deliver)
-        threading.Thread(target=worker, daemon=True).start()
+        start_tracked_worker(auxiliary_jobs,worker)
+
+    def open_survivor():
+        if not safe_to_close(busy[0],auxiliary_jobs[0]):
+            messagebox.showinfo('Operation running','Wait for current local commands to finish.',parent=root);return
+        chosen=list(tree.selection())
+        if len(chosen)!=1:
+            messagebox.showinfo('Select one conversation','Choose exactly one conversation and its destination account, then compare branches.',parent=root);return
+        invalidate();invalidate_regularization()
+        def command(script,args,callback):
+            busy[0]=True
+            def done(result):
+                busy[0]=False
+                callback(result)
+            try:
+                child_json(script,args,done)
+            except Exception:
+                busy[0]=False
+                raise
+        def completed(result):
+            refresh();show(result)
+            queue_activity('Survivor applied to saved history. No workspace launch requested.')
+        active_dialog[0]=SurvivorDialog(root,group.get(),color.get(),chosen[0],command,completed)
+
+    def open_batch():
+        if not safe_to_close(busy[0],auxiliary_jobs[0]):
+            messagebox.showinfo('Operation running','Wait for current local commands to finish.',parent=root);return
+        chosen=list(tree.selection())
+        if not chosen:
+            messagebox.showinfo('Select conversations','Choose the conversations to transfer, then choose the destination account.',parent=root);return
+        invalidate();invalidate_regularization()
+        def command(script,args,callback):
+            busy[0]=True
+            def done(result):
+                busy[0]=False;callback(result)
+            try:child_json(script,args,done)
+            except Exception:
+                busy[0]=False;raise
+        def completed(result):
+            refresh();show(result);queue_activity('Reviewed batch applied. No workspace launch requested.')
+        active_dialog[0]=BatchDialog(root,group.get(),color.get(),chosen,command,completed)
+
+    survivor_button=ttk.Button(utilities,text='Compare branches / choose survivor',command=open_survivor)
+    survivor_button.pack(side='left',padx=(0,8));widgets.append(survivor_button)
 
     def open_inventory():
         window = tk.Toplevel(root); window.title('Account inventory, compare and reviewed merge')
@@ -895,9 +969,10 @@ def main():
     help_button=ttk.Button(utilities,text='Show button help');help_button.pack(side='right')
     help_frame=ttk.LabelFrame(frame,text='Button help',padding=9)
     help_text=(
+        'Compare branches / choose survivor: select exactly one conversation and a different destination. Compare saved times, record counts, text previews and companion hashes. Choose the registered source to replace the destination, or keep the destination unchanged and cancel. No winner is preselected. Prepare preserves both main originals; open the review, acknowledge replacements, then Apply survivor. Changed evidence or live writers hold. No workspace opens, no prompt is sent, and source copies remain preserved.\n'
         'Top toolbar: Refresh data rereads the main table; Usage opens account snapshots; Reload App restarts only the idle switchboard from disk; Options saves display choices. Usage can sort by each bucket; missing readings sort last. Defaults are Fable ascending and a 95% strike threshold. Stale readings use gray backgrounds and absolute local reset times. Weekly above the threshold strikes the whole plan; 5-hour and Fable above it strike only those buckets. Strike-through is a display warning, not an account lock. Developer diagnostics expose no bypasses. BLUE is reserved and unassigned, not a configured login.\n'
         'Select all / Clear: select or clear visible conversation rows. Refresh table: reread the current-home register and saved history files; clears selection and any prepared review, but never moves history. Check readiness: check selected saved histories without moving them. Runtime diagnostics: identify live writers and unresolved PIDs; exact account login/status helpers are automatically excluded as non-writers, never terminated. Unknown writers remain HELD.\n'
-        'Prepare transition: create a review for selected conversations. Open transition review: inspect it. Open destination workspace: launch the whole VS Code workspace only when selected histories are registered there and no saved tabs outside the selection would restore. Selection does not automatically open individual Claude tabs. Apply and open workspace: apply the reviewed history move, then open it.\n'
+        'Prepare transition (batch): scan the whole selection first and show ALL conflicts together. Already-destination rows need no transfer. Choose source survivors individually or by listed source color, or exclude rows. Open one combined review and Apply the included batch once. Choices are never automatic; changed histories require a rescan. Both originals are preserved, shared project memory is unchanged, and no workspace launches. Open destination workspace is a separate action: it opens the whole VS Code workspace after registration and saved-tab checks, not individual Claude tabs.\n'
         'Compare settings / skills: audit selected destination against canonical shared baseline. Prepare settings / Prepare skills: stage one regularization review. Open regularization review: inspect exact changes. Apply reviewed regularization: write only staged changes after confirmation.\n'
         'Unregistered sessions: discover saved histories missing from the current-home register, select exact UUIDs in their existing account, prepare and open a registration review, then register them. This does not transfer or open histories; use the main table afterward. Account inventory / merge: inventory all colors, compare a source/target pair, prepare selected categories, open the merge review, then apply the reviewed merge. Credentialed MCPs and permission conflicts stay held.\n'
         'Usage snapshot: fetch account-wide 5-hour, 7-day and Fable weekly usage. Last successful readings survive restarts and are labelled STALE after a failed check; stale reset times are absolute local times. On HTTP 401 or wrong-account login, Open sign-in starts only the named account login; use Switch account in the browser if needed, then Retry checks only that account. Unavailable is not zero.\n'
@@ -939,8 +1014,8 @@ def main():
     finally:
         if reload_requested[0]:
             try:
-                restart_application(gate, subprocess.Popen, sys.executable, str(Path(__file__).resolve()))
-            except OSError as exc:
+                restart_application(gate)
+            except (OSError,RuntimeError) as exc:
                 ctypes.windll.user32.MessageBoxW(None, str(exc), 'Switchboard reload failed', 0x10)
         elif gate:
             gate.release()

@@ -1,5 +1,5 @@
 """Approved product identity; source-path and account identities remain unchanged."""
 APP_NAME = 'NectarDock'
-APP_VERSION = '0.2.2'
+APP_VERSION = '0.2.8'
 PUBLISHER = 'thealignedfew.com'
 RELEASE_CHANNEL = 'local preview'

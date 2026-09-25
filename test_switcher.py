@@ -14,6 +14,10 @@ import switcher as s
 
 class TransferSafety(unittest.TestCase):
     def setUp(self):
+        # Existing backend tests model an independent desktop caller. Broker
+        # routing is exercised separately with job-bound process fixtures.
+        lifetime=patch('desktop_launcher.needs_broker',return_value=False)
+        lifetime.start();self.addCleanup(lifetime.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.h, self.maps = s.dependencies()
@@ -213,8 +217,8 @@ class TransferSafety(unittest.TestCase):
 
     def test_unreviewed_version_is_not_excluded(self):
         item,evidence=self.support_fixture()
-        evidence['exe']=evidence['exe'].replace('2.1.280','2.1.281')
-        evidence['command']=evidence['command'].replace('2.1.280','2.1.281')
+        evidence['exe']=evidence['exe'].replace('2.1.280','2.1.999')
+        evidence['command']=evidence['command'].replace('2.1.280','2.1.999')
         self.assertFalse(s.support_only(item,evidence))
 
     def test_closed_unverified_helper_stays_unknown(self):
@@ -309,6 +313,7 @@ class TransferSafety(unittest.TestCase):
         row={'uuid':'a','label':'BI-A','config_home':s.ACCOUNTS['GREEN']['home']}
         maps=SimpleNamespace(load_verified=lambda *_: {})
         with patch.object(s,'dependencies',return_value=(None,maps)), \
+             patch.object(s,'BASE',self.root), \
              patch.object(s,'selected',return_value=[row]), \
              patch.object(s,'restored_workspace_tabs',return_value=[]), \
              patch.object(s,'auth_check',return_value=auth) as checked, patch.object(s,'launch') as launched:

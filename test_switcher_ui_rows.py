@@ -128,12 +128,10 @@ class UsageControlsTests(unittest.TestCase):
         events = []
         gate = Mock()
         gate.release.side_effect = lambda: events.append('released')
-        def launch(argv, **kwargs):
+        def launch(action):
             events.append('launched')
-            self.assertEqual(argv, ['C:/Python/pythonw.exe', 'E:/App/switcher_ui.py'])
-            self.assertEqual(kwargs['cwd'], str(switcher_ui.engine.BASE))
-        switcher_ui.restart_application(gate, launch, 'C:/Python/pythonw.exe',
-                                        'E:/App/switcher_ui.py', frozen=False)
+            self.assertEqual(action, 'ui')
+        switcher_ui.restart_application(gate, launch)
         self.assertEqual(events, ['released', 'launched'])
 
     def test_retry_one_account_preserves_other_snapshot_rows_and_errors(self):

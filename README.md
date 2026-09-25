@@ -14,7 +14,13 @@ private values and commit the result.
 
 - Shows registered conversations and their account/workspace associations.
 - Opens account-isolated VS Code workspaces with selection and saved-tab checks.
+- Brokers persistent Windows launches outside the requesting AI app's lifetime.
+  See [launcher setup and acceptance limits](docs/INDEPENDENT-LAUNCHER.md).
 - Stages reviewed saved-history transitions with preservation and recovery evidence.
+- Collects selected conversations into one batch review with explicit survivor choices
+  and exclusions, then applies the reviewed batch once without launching sessions.
+- Compares two branches of one conversation and lets the user explicitly choose
+  the registered source as the destination survivor, with backups and freshness guards.
 - Reconciles registration to an existing equal or extended history without copying
   over that history.
 - Displays last-known account usage, explicitly distinguishing stale data.
@@ -48,18 +54,18 @@ mobile pairing endpoint, or remote mutation API in this repository.
 On Windows with Python 3.11 (including Tk) and Node.js 22:
 
 ```powershell
-python -B -m unittest test_account_inventory test_regularize test_usage_snapshot test_runtime_diagnostics test_switchboard_activity test_switchboard_instance test_switcher_ui_rows test_display_options -q
+python -B -m unittest test_account_inventory test_regularize test_usage_snapshot test_runtime_diagnostics test_switchboard_activity test_switchboard_instance test_switcher_ui_rows test_display_options test_group_consolidation test_workspace_consolidation.WorkspaceConsolidationTests test_survivor_review test_survivor_dialog test_batch_choices test_batch_dialog -q
 node --test vscode-extension/test-launcher.js
 ```
 
-The initial sanitized snapshot passes 52 Python tests and four standalone Node
+The 0.2.5 sanitized snapshot passes 82 Python tests and four standalone Node
 tests. These use synthetic data and do not launch provider sessions. The separate
 VS Code extension-host test requires an actual extension test host and is not
 covered by the command above. It checks activation and command registration only,
 not backend diagnostics or workspace launch success.
 
-The private operational baseline passed 128 Python tests. That broader result does
-not imply the 76 helper-dependent tests can run in this repository. CI deliberately
+The 0.2.5 private operational baseline passed 182 Python tests. That broader result does
+not imply the 100 helper-dependent tests can run in this repository. CI deliberately
 runs only the self-contained set and reports this boundary.
 
 ## Where to start

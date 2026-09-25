@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.7 source preview
+
+- Fixed discovery of histories whose names are saved as native `ai-title` records.
+  Latest generated titles now serve as a fallback for the exact UUID; explicit
+  names retain precedence. No conversations are rewritten or renamed.
+- Regression tests cover generated-only names, updates and foreign UUID rejection.
+
 ## 0.2.6 source preview
 
 - Added a same-user, non-elevated Windows Task Scheduler broker for persistent

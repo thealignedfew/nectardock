@@ -40,11 +40,12 @@ def clear_runtime(rows):
 def native_title(path, sid):
     """Read only native title records; do not expose message text as a title."""
     title = None
+    generated = None
     with Path(path).open('rb') as stream:
         for line in stream:
             if len(line) > 256 * 1024 * 1024:
                 raise s.Hold('Oversized native record: ' + sid)
-            if b'"custom-title"' not in line and b'"agent-name"' not in line:
+            if not any(marker in line for marker in (b'"custom-title"',b'"agent-name"',b'"ai-title"')):
                 continue
             try:
                 item = json.loads(line)
@@ -56,11 +57,18 @@ def native_title(path, sid):
                 candidate = item.get('customTitle')
             elif item.get('type') == 'agent-name':
                 candidate = item.get('agentName')
+            elif item.get('type') == 'ai-title':
+                candidate = item.get('aiTitle')
+                if isinstance(candidate,str) and candidate.strip():
+                    generated=candidate.strip()
+                continue
             else:
                 continue
             if isinstance(candidate, str) and candidate.strip():
                 title = candidate.strip()
-    return title
+    # Explicit native titles remain authoritative even if Claude later emits a
+    # generated title. Activity alone does not imply an explicit rename record.
+    return title or generated
 
 
 def discover(group, view=None):

@@ -50,6 +50,22 @@ class RegistrationSafety(unittest.TestCase):
         self.assertEqual(items[0]['homes'], ['GREEN','ORANGE'])
         self.assertEqual(r.discover('FPA', {'records':{SID:{}}}), [])
 
+    def test_ai_title_is_discoverable_and_does_not_override_explicit_title(self):
+        ai={'type':'ai-title','sessionId':SID,'aiTitle':'Cash analysis'}
+        self.main.write_text(json.dumps(ai)+'\n')
+        self.assertEqual(r.discover('FPA',{'records':{}})[0]['label'],'Cash analysis')
+        explicit={'type':'custom-title','sessionId':SID,'customTitle':'MY-CASH'}
+        self.main.write_text(json.dumps(explicit)+'\n'+json.dumps(ai)+'\n')
+        self.assertEqual(r.native_title(self.main,SID),'MY-CASH')
+
+    def test_ai_title_uses_latest_matching_session_only(self):
+        records=[{'type':'ai-title','sessionId':SID,'aiTitle':'Old'},
+                 {'type':'ai-title','sessionId':SID,'aiTitle':'New'},
+                 {'type':'ai-title','sessionId':'elsewhere','aiTitle':'Wrong'},
+                 {'type':'user','sessionId':SID,'aiTitle':'Not metadata'}]
+        self.main.write_text(''.join(json.dumps(row)+'\n' for row in records))
+        self.assertEqual(r.native_title(self.main,SID),'New')
+
     def test_prepare_holds_duplicate_account_copy_instead_of_guessing_owner(self):
         other = self.orange / 'projects' / self.bucket / (SID + '.jsonl')
         other.parent.mkdir(parents=True)

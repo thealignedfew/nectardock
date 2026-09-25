@@ -169,7 +169,8 @@ def serve(rid):
         path=folder/'request.json'
         stat=path.stat()
         require(stat.st_size<=65536 and not (stat.st_file_attributes&0x400),'Invalid request file')
-        require(0<=time.time()-stat.st_mtime<=120,'Expired or future-dated desktop request; no launch')
+        # Windows file timestamps can round slightly ahead of time.time().
+        require(-1<=time.time()-stat.st_mtime<=120,'Expired or future-dated desktop request; no launch')
         data=json.loads(path.read_text(encoding='utf-8'))
         validate_request(data)
         if in_job() or data['kind']!='probe':

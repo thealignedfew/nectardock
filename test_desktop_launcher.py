@@ -38,7 +38,7 @@ class DesktopLauncherTests(unittest.TestCase):
             (folder/'request.json').write_text(json.dumps({'kind':'probe'}))
             d.serve(rid)
             result=json.loads((folder/'result.json').read_text())
-            self.assertEqual(result['state'],'INDEPENDENT_LAUNCHER_VERIFIED')
+            self.assertEqual(result['state'],'INDEPENDENT_LAUNCHER_VERIFIED',result)
             self.assertFalse(result['in_job'])
             with self.assertRaises(FileExistsError):d.serve(rid)
 
@@ -112,6 +112,16 @@ class DesktopLauncherTests(unittest.TestCase):
             result=d.serve(rid)
             self.assertEqual(result['state'],'HELD')
             self.assertIn('Expired',result['error'])
+
+    def test_filesystem_timestamp_rounding_does_not_reject_fresh_request(self):
+        d=self.module()
+        with tempfile.TemporaryDirectory() as tmp,patch.object(d,'QUEUE',Path(tmp)),\
+                patch.object(d,'in_job',return_value=False):
+            rid=str(uuid.uuid4());folder=Path(tmp)/rid;folder.mkdir()
+            path=folder/'request.json';path.write_text(json.dumps({'kind':'probe'}))
+            with patch.object(d.time,'time',return_value=path.stat().st_mtime-0.000001):
+                result=d.serve(rid)
+            self.assertEqual(result['state'],'INDEPENDENT_LAUNCHER_VERIFIED',result)
 
     def test_post_launch_receipt_failure_is_not_reported_as_no_launch(self):
         d=self.module()
